@@ -28,9 +28,17 @@ except ImportError:
     _groq_client = None
 
 try:
-    from jarvis_calendar import TOOL_DEF as _TOOL_DEF, dispatch_tool_call as _dispatch_tool_call
+    from jarvis_calendar import TOOL_DEF as _CAL_TOOL, dispatch_tool_call as _cal_dispatch
+    from jarvis_reminders import TOOL_DEFS as _REM_TOOLS, dispatch_tool_call as _rem_dispatch
+    _ALL_TOOLS = [_CAL_TOOL] + _REM_TOOLS
+
+    def _dispatch_tool_call(name, args):
+        if name == "add_calendar_event":
+            return _cal_dispatch(name, args)
+        return _rem_dispatch(name, args)
+
 except ImportError:
-    _TOOL_DEF = None
+    _ALL_TOOLS = None
     _dispatch_tool_call = None
 
 chat_history = []
@@ -55,8 +63,8 @@ def chat_with_jarvis(user_message):
         system_prompt = _get_system_prompt()
         kwargs = {"model": "llama-3.3-70b-versatile", "max_tokens": 400,
                   "messages": [{"role": "system", "content": system_prompt}] + chat_history}
-        if _TOOL_DEF:
-            kwargs["tools"] = [_TOOL_DEF]
+        if _ALL_TOOLS:
+            kwargs["tools"] = _ALL_TOOLS
             kwargs["tool_choice"] = "auto"
 
         resp = _groq_client.chat.completions.create(**kwargs)

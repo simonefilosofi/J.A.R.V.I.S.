@@ -10,7 +10,15 @@ import numpy as np
 import scipy.io.wavfile as wav
 import speech_recognition as sr
 from groq import Groq
-from jarvis_calendar import TOOL_DEF, dispatch_tool_call
+from jarvis_calendar import TOOL_DEF as _CAL_TOOL, dispatch_tool_call as _cal_dispatch
+from jarvis_reminders import TOOL_DEFS as _REM_TOOLS, dispatch_tool_call as _rem_dispatch
+
+ALL_TOOLS = [_CAL_TOOL] + _REM_TOOLS
+
+def dispatch_tool_call(name, args):
+    if name == "add_calendar_event":
+        return _cal_dispatch(name, args)
+    return _rem_dispatch(name, args)
 import subprocess
 import threading
 import tempfile
@@ -106,7 +114,7 @@ def ask_claude(user_text):
             model="llama-3.3-70b-versatile",
             max_tokens=300,
             messages=messages,
-            tools=[TOOL_DEF],
+            tools=ALL_TOOLS,
             tool_choice="auto",
         )
         msg = response.choices[0].message
