@@ -10,6 +10,7 @@ import numpy as np
 import scipy.io.wavfile as wav
 import speech_recognition as sr
 from groq import Groq
+from jarvis_calendar import TOOL_DEF, dispatch_tool_call
 import subprocess
 import threading
 import tempfile
@@ -98,15 +99,52 @@ def ask_claude(user_text):
         conversation_history = conversation_history[-40:]
 
     try:
-        # Get real-time system prompt with current date/time
         system_prompt_with_time = get_system_prompt()
-        
+        messages = [{"role": "system", "content": system_prompt_with_time}] + conversation_history
+
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             max_tokens=300,
-            messages=[{"role": "system", "content": system_prompt_with_time}] + conversation_history,
+            messages=messages,
+            tools=[TOOL_DEF],
+            tool_choice="auto",
         )
-        reply = response.choices[0].message.content
+        msg = response.choices[0].message
+
+        # ── Tool call handling ────────────────────────────────
+        if msg.tool_calls:
+            # Record assistant turn with tool calls
+            conversation_history.append({
+                "role": "assistant",
+                "content": msg.content or "",
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments}
+                    }
+                    for tc in msg.tool_calls
+                ]
+            })
+            # Execute each tool and append results
+            for tc in msg.tool_calls:
+                result_str = dispatch_tool_call(tc.function.name, tc.function.arguments)
+                conversation_history.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result_str,
+                })
+            # Get final conversational reply
+            response2 = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                max_tokens=300,
+                messages=[{"role": "system", "content": system_prompt_with_time}] + conversation_history,
+            )
+            reply = response2.choices[0].message.content
+            conversation_history.append({"role": "assistant", "content": reply})
+            return reply
+
+        reply = msg.content
         conversation_history.append({"role": "assistant", "content": reply})
         return reply
 

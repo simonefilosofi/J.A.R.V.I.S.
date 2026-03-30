@@ -27,6 +27,12 @@ try:
 except ImportError:
     _groq_client = None
 
+try:
+    from jarvis_calendar import TOOL_DEF as _TOOL_DEF, dispatch_tool_call as _dispatch_tool_call
+except ImportError:
+    _TOOL_DEF = None
+    _dispatch_tool_call = None
+
 chat_history = []
 
 def _get_system_prompt():
@@ -46,12 +52,47 @@ def chat_with_jarvis(user_message):
     if len(chat_history) > 40:
         chat_history = chat_history[-40:]
     try:
-        resp = _groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            max_tokens=400,
-            messages=[{"role": "system", "content": _get_system_prompt()}] + chat_history,
-        )
-        reply = resp.choices[0].message.content
+        system_prompt = _get_system_prompt()
+        kwargs = {"model": "llama-3.3-70b-versatile", "max_tokens": 400,
+                  "messages": [{"role": "system", "content": system_prompt}] + chat_history}
+        if _TOOL_DEF:
+            kwargs["tools"] = [_TOOL_DEF]
+            kwargs["tool_choice"] = "auto"
+
+        resp = _groq_client.chat.completions.create(**kwargs)
+        msg = resp.choices[0].message
+
+        # ── Tool call handling ────────────────────────────────
+        if msg.tool_calls and _dispatch_tool_call:
+            chat_history.append({
+                "role": "assistant",
+                "content": msg.content or "",
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments}
+                    }
+                    for tc in msg.tool_calls
+                ]
+            })
+            for tc in msg.tool_calls:
+                result_str = _dispatch_tool_call(tc.function.name, tc.function.arguments)
+                chat_history.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result_str,
+                })
+            resp2 = _groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                max_tokens=400,
+                messages=[{"role": "system", "content": system_prompt}] + chat_history,
+            )
+            reply = resp2.choices[0].message.content
+            chat_history.append({"role": "assistant", "content": reply})
+            return reply
+
+        reply = msg.content
         chat_history.append({"role": "assistant", "content": reply})
         return reply
     except Exception as e:
