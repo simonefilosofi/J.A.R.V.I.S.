@@ -31,13 +31,17 @@ try:
     from jarvis_calendar import TOOL_DEF as _CAL_TOOL, dispatch_tool_call as _cal_dispatch
     from jarvis_reminders import TOOL_DEFS as _REM_TOOLS, dispatch_tool_call as _rem_dispatch
     from jarvis_search import TOOL_DEF as _SEARCH_TOOL, dispatch_tool_call as _search_dispatch
-    _ALL_TOOLS = [_CAL_TOOL] + _REM_TOOLS + [_SEARCH_TOOL]
+    from jarvis_system import TOOL_DEFS as _SYS_TOOLS, dispatch_tool_call as _sys_dispatch
+    _ALL_TOOLS = [_CAL_TOOL] + _REM_TOOLS + [_SEARCH_TOOL] + _SYS_TOOLS
+    _SYS_NAMES = {"set_volume", "set_brightness", "set_focus"}
 
     def _dispatch_tool_call(name, args):
         if name == "add_calendar_event":
             return _cal_dispatch(name, args)
         if name == "web_search":
             return _search_dispatch(name, args)
+        if name in _SYS_NAMES:
+            return _sys_dispatch(name, args)
         return _rem_dispatch(name, args)
 
 except ImportError:
