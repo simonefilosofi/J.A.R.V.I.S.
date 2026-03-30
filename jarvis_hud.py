@@ -15,6 +15,48 @@ import requests
 import os
 import sys
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+try:
+    from groq import Groq as _Groq
+    _groq_client = _Groq(api_key=os.environ.get("GROQ_API_KEY", "")) if os.environ.get("GROQ_API_KEY") else None
+except ImportError:
+    _groq_client = None
+
+chat_history = []
+
+def _get_system_prompt():
+    now = datetime.datetime.now()
+    return (
+        f"You are J.A.R.V.I.S. (Just A Rather Very Intelligent System), the AI assistant of Simone Filosofi.\n"
+        f"CURRENT TIME: {now.strftime('%H:%M:%S')}  DATE: {now.strftime('%A, %d %B %Y').upper()}\n"
+        "Your personality: highly intelligent, precise, slightly witty. Address the user as 'Mr. Filosofi' occasionally.\n"
+        "Keep replies concise and clear. Never break character. Respond in the same language the user writes in."
+    )
+
+def chat_with_jarvis(user_message):
+    global chat_history
+    if not _groq_client:
+        return "GROQ_API_KEY not configured. Add it to your .env file."
+    chat_history.append({"role": "user", "content": user_message})
+    if len(chat_history) > 40:
+        chat_history = chat_history[-40:]
+    try:
+        resp = _groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            max_tokens=400,
+            messages=[{"role": "system", "content": _get_system_prompt()}] + chat_history,
+        )
+        reply = resp.choices[0].message.content
+        chat_history.append({"role": "assistant", "content": reply})
+        return reply
+    except Exception as e:
+        return f"System error: {str(e)[:80]}"
+
 voice_process = None
 
 PORT = 7879
@@ -177,14 +219,24 @@ HTML = """<!DOCTYPE html>
 
     <div id="alert-banner">⚠ SYSTEM OVERLOAD DETECTED ⚠</div>
 
-    <!-- Pulsante JARVIS Voice -->
+    <!-- Pulsanti JARVIS Voice + Chat -->
     <div style="text-align:center;margin-bottom:10px;">
-      <button id="voice-btn" onclick="toggleVoice()" style="
-        background:transparent; border:1px solid #005f73; color:#00d4ff;
-        font-family:'Share Tech Mono','Courier New',monospace; font-size:11px;
-        letter-spacing:2px; padding:8px 28px; cursor:pointer;
-        transition:all 0.3s;
-      ">◈ ACTIVATE JARVIS</button>
+      <div style="display:inline-flex;gap:10px;align-items:center;">
+        <button id="voice-btn" onclick="toggleVoice()" style="
+          background:transparent; border:1px solid #005f73; color:#00d4ff;
+          font-family:'Share Tech Mono','Courier New',monospace; font-size:11px;
+          letter-spacing:2px; padding:8px 28px; cursor:pointer;
+          transition:all 0.3s;
+        ">◈ ACTIVATE JARVIS</button>
+        <button onclick="window.open('/chat','_blank')" style="
+          background:transparent; border:1px solid #005f73; color:#00d4ff;
+          font-family:'Share Tech Mono','Courier New',monospace; font-size:11px;
+          letter-spacing:2px; padding:8px 28px; cursor:pointer;
+          transition:all 0.3s;
+        " onmouseover="this.style.borderColor='#00d4ff';this.style.boxShadow='0 0 10px #00d4ff44'"
+           onmouseout="this.style.borderColor='#005f73';this.style.boxShadow='none'"
+        >◈ CHAT</button>
+      </div>
       <div id="voice-status" style="font-size:9px;color:#005f73;letter-spacing:1px;margin-top:4px;"></div>
     </div>
 
@@ -398,6 +450,7 @@ function toggleVoice() {
   const status = document.getElementById('voice-status');
 
   if (!voiceActive) {
+    const jarvisWin = window.open('/jarvis', '_blank');
     fetch('/voice/start')
       .then(r => r.json())
       .then(d => {
@@ -409,13 +462,14 @@ function toggleVoice() {
           btn.style.boxShadow = '0 0 10px #00d4ff44';
           status.textContent = 'VOICE SYSTEM ONLINE · SAY HEY JARVIS';
           status.style.color = '#00d4ff';
-          window.open('/jarvis', '_blank');
         } else {
+          if (jarvisWin) jarvisWin.close();
           status.textContent = d.error || 'ERRORE AVVIO';
           status.style.color = '#ff2251';
         }
       })
       .catch(() => {
+        if (jarvisWin) jarvisWin.close();
         status.textContent = 'ERRORE CONNESSIONE';
         status.style.color = '#ff2251';
       });
@@ -435,6 +489,164 @@ function toggleVoice() {
 }
 
 startHUD();
+</script>
+</body>
+</html>"""
+
+# ── Chat Page ────────────────────────────────────────────────
+CHAT_HTML = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>J.A.R.V.I.S. · CHAT</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  :root{--c:#00d4ff;--dim:#005f73;--bg:#020c10;--warn:#ff6b35;}
+  body{
+    background:var(--bg);color:var(--c);
+    font-family:'Share Tech Mono','Courier New',monospace;
+    height:100vh;display:flex;flex-direction:column;overflow:hidden;
+  }
+  body::before{
+    content:'';position:fixed;inset:0;
+    background-image:linear-gradient(rgba(0,212,255,0.02) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(0,212,255,0.02) 1px,transparent 1px);
+    background-size:40px 40px;pointer-events:none;z-index:0;
+  }
+  .scanline{position:fixed;left:0;right:0;height:2px;background:rgba(0,212,255,0.06);
+    animation:scan 4s linear infinite;pointer-events:none;z-index:99;}
+  @keyframes scan{0%{top:-2px}100%{top:100%}}
+  .corner{position:fixed;width:20px;height:20px;border-color:var(--dim);border-style:solid;opacity:0.5;}
+  .corner.tl{top:12px;left:12px;border-width:1px 0 0 1px;}
+  .corner.tr{top:12px;right:12px;border-width:1px 1px 0 0;}
+  .corner.bl{bottom:12px;left:12px;border-width:0 0 1px 1px;}
+  .corner.br{bottom:12px;right:12px;border-width:0 1px 1px 0;}
+  #header{
+    padding:16px 24px;border-bottom:1px solid var(--dim);
+    font-size:11px;letter-spacing:4px;text-align:center;
+    position:relative;z-index:1;flex-shrink:0;
+  }
+  #header .sub{font-size:8px;color:var(--dim);letter-spacing:2px;margin-top:4px;}
+  #messages{
+    flex:1;overflow-y:auto;padding:20px 60px;display:flex;flex-direction:column;gap:14px;
+    position:relative;z-index:1;
+  }
+  #messages::-webkit-scrollbar{width:4px;}
+  #messages::-webkit-scrollbar-track{background:transparent;}
+  #messages::-webkit-scrollbar-thumb{background:var(--dim);border-radius:2px;}
+  .msg{max-width:68%;padding:10px 14px;line-height:1.65;font-size:12px;letter-spacing:0.3px;}
+  .msg.user{
+    align-self:flex-end;border:1px solid rgba(255,107,53,0.4);
+    color:#ff6b35;background:rgba(255,107,53,0.04);
+  }
+  .msg.user::before{content:'[ YOU ]';font-size:7px;color:rgba(255,107,53,0.6);letter-spacing:2px;display:block;margin-bottom:4px;}
+  .msg.jarvis{
+    align-self:flex-start;border:1px solid rgba(0,212,255,0.25);
+    color:var(--c);background:rgba(0,212,255,0.03);
+  }
+  .msg.jarvis::before{content:'[ J.A.R.V.I.S. ]';font-size:7px;color:rgba(0,212,255,0.5);letter-spacing:2px;display:block;margin-bottom:4px;}
+  .msg.thinking{
+    align-self:flex-start;border:1px solid var(--dim);
+    color:var(--dim);font-size:11px;animation:blink 1s infinite;
+  }
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:0.35}}
+  #input-area{
+    border-top:1px solid var(--dim);padding:14px 60px;
+    display:flex;gap:10px;align-items:center;
+    position:relative;z-index:1;flex-shrink:0;
+  }
+  #msg-input{
+    flex:1;background:transparent;border:1px solid var(--dim);
+    color:var(--c);font-family:'Share Tech Mono','Courier New',monospace;
+    font-size:12px;letter-spacing:0.5px;padding:10px 14px;outline:none;
+    transition:border-color 0.2s;
+  }
+  #msg-input:focus{border-color:var(--c);}
+  #msg-input::placeholder{color:var(--dim);}
+  #send-btn{
+    background:transparent;border:1px solid var(--dim);color:var(--c);
+    font-family:'Share Tech Mono','Courier New',monospace;font-size:11px;
+    letter-spacing:2px;padding:10px 22px;cursor:pointer;transition:all 0.2s;
+  }
+  #send-btn:hover:not(:disabled){border-color:var(--c);box-shadow:0 0 8px #00d4ff33;}
+  #send-btn:disabled{opacity:0.35;cursor:default;}
+</style>
+</head>
+<body>
+<div class="scanline"></div>
+<div class="corner tl"></div><div class="corner tr"></div>
+<div class="corner bl"></div><div class="corner br"></div>
+
+<div id="header">
+  ◈ J.A.R.V.I.S. · TEXT INTERFACE ◈
+  <div class="sub">STARK INDUSTRIES — SECURE CHANNEL</div>
+</div>
+
+<div id="messages">
+  <div class="msg jarvis">Online and ready, Mr. Filosofi. How may I assist you today?</div>
+</div>
+
+<div id="input-area">
+  <input id="msg-input" type="text" placeholder="TYPE YOUR MESSAGE..." autocomplete="off"/>
+  <button id="send-btn" onclick="sendMsg()">◈ SEND</button>
+</div>
+
+<script>
+const input = document.getElementById('msg-input');
+const sendBtn = document.getElementById('send-btn');
+const messages = document.getElementById('messages');
+
+input.addEventListener('keydown', e => { if(e.key === 'Enter' && !sendBtn.disabled) sendMsg(); });
+
+function addMsg(text, type) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + type;
+  if(type === 'thinking') div.textContent = '◈ PROCESSING ···';
+  else div.textContent = text;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+  return div;
+}
+
+function typewriter(el, text) {
+  el.textContent = '';
+  let i = 0;
+  function step() {
+    if(i < text.length) { el.textContent += text[i++]; setTimeout(step, 20); }
+    messages.scrollTop = messages.scrollHeight;
+  }
+  step();
+}
+
+async function sendMsg() {
+  const text = input.value.trim();
+  if(!text) return;
+  input.value = '';
+  sendBtn.disabled = true;
+  input.disabled = true;
+  addMsg(text, 'user');
+  const thinking = addMsg('', 'thinking');
+  try {
+    const res = await fetch('/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({message: text})
+    });
+    const data = await res.json();
+    thinking.remove();
+    const d = addMsg('', 'jarvis');
+    typewriter(d, data.reply || 'No response received.');
+  } catch(e) {
+    thinking.remove();
+    addMsg('Connection error. Please try again.', 'jarvis');
+  } finally {
+    sendBtn.disabled = false;
+    input.disabled = false;
+    input.focus();
+  }
+}
+input.focus();
 </script>
 </body>
 </html>"""
@@ -775,6 +987,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(JARVIS_HTML.encode())
 
+        elif self.path == "/chat":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(CHAT_HTML.encode())
+
         elif self.path == "/jarvis/status":
             try:
                 with open("/tmp/jarvis_state.json") as f:
@@ -796,6 +1014,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
             body = self._voice_stop()
             self._json(body)
 
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self):
+        if self.path == "/chat":
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            try:
+                payload = json.loads(body)
+                user_msg = payload.get("message", "").strip()
+                if not user_msg:
+                    self._json({"reply": "Empty message."})
+                    return
+                reply = chat_with_jarvis(user_msg)
+                self._json({"reply": reply})
+            except Exception as e:
+                self._json({"reply": f"Error: {str(e)[:80]}"})
         else:
             self.send_response(404)
             self.end_headers()
