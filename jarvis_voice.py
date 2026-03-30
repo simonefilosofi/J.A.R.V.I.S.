@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-JARVIS Voice Assistant — powered by Claude
-Dì "Hey JARVIS" → JARVIS ascolta e risponde come una vera AI
+JARVIS Voice Assistant - powered by Groq
+Say "Hey JARVIS" -> JARVIS listens and replies like a real AI
 """
 
 import json
@@ -16,6 +16,7 @@ import tempfile
 import time
 import os
 import sys
+import datetime
 
 # ── Load environment variables from .env file ────────────────
 try:
@@ -36,8 +37,8 @@ def write_state(state, user_text="", jarvis_text=""):
 
 # ── Config ───────────────────────────────────────────────────
 WAKE_WORD      = "jarvis"
-LISTEN_TIMEOUT = 6        # secondi di ascolto dopo wake word
-THRESHOLD      = 0.02     # sensibilità microfono
+LISTEN_TIMEOUT = 6        # listen window in seconds after wake word
+THRESHOLD      = 0.02     # microphone sensitivity
 SAMPLE_RATE    = 16000
 VOICE          = "Daniel"
 VOICE_RATE     = 165
@@ -45,22 +46,31 @@ VOICE_RATE     = 165
 # ── Groq client ──────────────────────────────────────────────
 API_KEY = os.environ.get("GROQ_API_KEY", "")
 if not API_KEY:
-    print("\n  ERRORE: variabile GROQ_API_KEY non impostata.")
-    print("  Scegli un'opzione:")
-    print("  1) Copia .env.example in .env e aggiungi la tua chiave")
-    print("  2) Esegui: export GROQ_API_KEY='gsk_...'")
-    print("\n  Ottieni la key gratis su console.groq.com")
+    print("\n  ERROR: GROQ_API_KEY environment variable is not set.")
+    print("  Choose one option:")
+    print("  1) Copy .env.example to .env and add your API key")
+    print("  2) Run: export GROQ_API_KEY='gsk_...'")
+    print("\n  Get a free key at console.groq.com")
     sys.exit(1)
 
 client = Groq(api_key=API_KEY)
 
-SYSTEM_PROMPT = """You are J.A.R.V.I.S. (Just A Rather Very Intelligent System), the AI assistant of Tony Stark / Iron Man.
+def get_system_prompt():
+    """Generate system prompt with real-time date and time."""
+    now = datetime.datetime.now()
+    current_time = now.strftime("%H:%M:%S")
+    current_date = now.strftime("%A, %d %B %Y").upper()
+    
+    return f"""You are J.A.R.V.I.S. (Just A Rather Very Intelligent System), the AI assistant of Simone Filosofi.
+
+CURRENT SYSTEM TIME: {current_time}
+CURRENT DATE: {current_date}
 
 Your personality:
 - Highly intelligent, precise, and slightly witty
 - Address the user as "Mr. Filosofi" occasionally, but not every sentence
 - Concise — voice responses should be short (2-4 sentences max) since they will be read aloud
-- You have access to real-time awareness (you know today's date and time if asked)
+- Always refer to the current time above when asked (e.g., "It's currently {current_time}")
 - You can discuss any topic: science, technology, philosophy, current events, advice, jokes, Iron Man lore, etc.
 - Occasionally make subtle references to Stark Industries, the suits, or the Avengers when relevant
 - Never break character. You are JARVIS, not an AI assistant.
@@ -71,7 +81,7 @@ conversation_history = []
 
 # ── TTS ──────────────────────────────────────────────────────
 def speak(text, wait=True):
-    # Rimuovi caratteri che suonano male ad alta voce
+    # Remove characters that sound odd when spoken aloud.
     clean = text.replace("*", "").replace("#", "").replace("`", "").replace("_", " ")
     print(f"\n  JARVIS: {clean}\n")
     fn = subprocess.run if wait else subprocess.Popen
@@ -83,15 +93,18 @@ def ask_claude(user_text):
 
     conversation_history.append({"role": "user", "content": user_text})
 
-    # Mantieni max 20 turni di storia
+    # Keep up to 20 conversation turns.
     if len(conversation_history) > 40:
         conversation_history = conversation_history[-40:]
 
     try:
+        # Get real-time system prompt with current date/time
+        system_prompt_with_time = get_system_prompt()
+        
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             max_tokens=300,
-            messages=[{"role": "system", "content": SYSTEM_PROMPT}] + conversation_history,
+            messages=[{"role": "system", "content": system_prompt_with_time}] + conversation_history,
         )
         reply = response.choices[0].message.content
         conversation_history.append({"role": "assistant", "content": reply})
@@ -100,10 +113,10 @@ def ask_claude(user_text):
     except Exception as e:
         err = str(e).lower()
         if "auth" in err or "api key" in err:
-            return "API key non valida. Controlla su console.groq.com"
+            return "Invalid API key. Check it on console.groq.com."
         if "rate" in err:
-            return "Troppi comandi in poco tempo. Attendere un momento."
-        return f"Errore di sistema: {str(e)[:60]}"
+            return "Too many requests in a short time. Please wait a moment."
+        return f"System error: {str(e)[:60]}"
 
 # ── Registrazione audio ───────────────────────────────────────
 def record(seconds=6):
@@ -135,7 +148,7 @@ def transcribe(wav_path, language="it-IT"):
     try:
         with sr.AudioFile(wav_path) as src:
             audio = recognizer.record(src)
-        # Prova italiano, poi inglese
+        # Try Italian first, then English.
         try:
             return recognizer.recognize_google(audio, language="it-IT").lower()
         except sr.UnknownValueError:
@@ -144,7 +157,7 @@ def transcribe(wav_path, language="it-IT"):
             except sr.UnknownValueError:
                 return None
     except sr.RequestError:
-        speak("Connessione per la trascrizione non disponibile.")
+        speak("Speech transcription service is not available.")
         return None
     finally:
         try:
@@ -197,40 +210,40 @@ def main():
     print("  J.A.R.V.I.S. — powered by Groq / Llama 3.3 70B")
     print("="*52)
     print("  Wake word : 'Hey JARVIS'")
-    print("  Lingue    : Italiano / English")
-    print("  Premi Ctrl+C per spegnere")
+    print("  Languages : Italian / English")
+    print("  Press Ctrl+C to shut down")
     print("="*52 + "\n")
 
     write_state("idle")
-    speak("Sistema JARVIS online. Sono pronto, signor Stark.", wait=True)
+    speak("JARVIS system online. I am ready, Mr. Stark.", wait=True)
 
     while True:
-        print("  In ascolto... (dì 'Hey JARVIS')")
+        print("  Listening... (say 'Hey JARVIS')")
         write_state("listening")
         listen_for_wake_word()
 
         write_state("listening")
-        speak("Come posso aiutarla?", wait=False)
-        print("  Wake word rilevato. In ascolto del comando...")
+        speak("How can I help you?", wait=False)
+        print("  Wake word detected. Listening for your command...")
 
         wav_path = record(seconds=LISTEN_TIMEOUT)
         if not wav_path:
-            write_state("speaking", jarvis_text="Non ho sentito nulla, signor Stark.")
-            speak("Non ho sentito nulla, signor Stark.")
+            write_state("speaking", jarvis_text="I did not hear anything, Mr. Stark.")
+            speak("I did not hear anything, Mr. Stark.")
             write_state("idle")
             continue
 
         user_text = transcribe(wav_path)
         if not user_text:
-            write_state("speaking", jarvis_text="Non ho capito. Può ripetere?")
-            speak("Non ho capito. Può ripetere?")
+            write_state("speaking", jarvis_text="I did not understand. Could you repeat that?")
+            speak("I did not understand. Could you repeat that?")
             write_state("idle")
             continue
 
-        print(f"  Lei: {user_text}")
+        print(f"  You: {user_text}")
         write_state("thinking", user_text=user_text)
 
-        # Risposta Claude in un thread separato per non bloccare
+        # Get model response.
         reply = ask_claude(user_text)
         write_state("speaking", user_text=user_text, jarvis_text=reply)
         speak(reply, wait=True)
@@ -241,4 +254,4 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n\n  JARVIS offline. Buona giornata, signor Filosofi.")
+        print("\n\n  JARVIS offline. Have a great day, Mr. Filosofi.")
