@@ -12,12 +12,15 @@ import speech_recognition as sr
 from groq import Groq
 from jarvis_calendar import TOOL_DEF as _CAL_TOOL, dispatch_tool_call as _cal_dispatch
 from jarvis_reminders import TOOL_DEFS as _REM_TOOLS, dispatch_tool_call as _rem_dispatch
+from jarvis_search import TOOL_DEF as _SEARCH_TOOL, dispatch_tool_call as _search_dispatch
 
-ALL_TOOLS = [_CAL_TOOL] + _REM_TOOLS
+ALL_TOOLS = [_CAL_TOOL] + _REM_TOOLS + [_SEARCH_TOOL]
 
 def dispatch_tool_call(name, args):
     if name == "add_calendar_event":
         return _cal_dispatch(name, args)
+    if name == "web_search":
+        return _search_dispatch(name, args)
     return _rem_dispatch(name, args)
 import subprocess
 import threading
@@ -84,7 +87,8 @@ Your personality:
 - Occasionally make subtle references to Stark Industries, the suits, or the Avengers when relevant
 - Never break character. You are JARVIS, not an AI assistant.
 - Respond in the same language the user speaks (Italian or English)
-- Keep responses SHORT — they will be spoken aloud, so avoid long lists or markdown formatting"""
+- Keep responses SHORT — they will be spoken aloud, so avoid long lists or markdown formatting
+- Use web_search for any real-time or current information: news, weather, prices, sports results, recent events"""
 
 conversation_history = []
 
@@ -111,7 +115,7 @@ def ask_claude(user_text):
         messages = [{"role": "system", "content": system_prompt_with_time}] + conversation_history
 
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
             max_tokens=300,
             messages=messages,
             tools=ALL_TOOLS,
@@ -121,7 +125,6 @@ def ask_claude(user_text):
 
         # ── Tool call handling ────────────────────────────────
         if msg.tool_calls:
-            # Record assistant turn with tool calls
             conversation_history.append({
                 "role": "assistant",
                 "content": msg.content or "",
@@ -134,7 +137,6 @@ def ask_claude(user_text):
                     for tc in msg.tool_calls
                 ]
             })
-            # Execute each tool and append results
             for tc in msg.tool_calls:
                 result_str = dispatch_tool_call(tc.function.name, tc.function.arguments)
                 conversation_history.append({
@@ -142,9 +144,8 @@ def ask_claude(user_text):
                     "tool_call_id": tc.id,
                     "content": result_str,
                 })
-            # Get final conversational reply
             response2 = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="meta-llama/llama-4-scout-17b-16e-instruct",
                 max_tokens=300,
                 messages=[{"role": "system", "content": system_prompt_with_time}] + conversation_history,
             )

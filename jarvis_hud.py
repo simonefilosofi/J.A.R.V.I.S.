@@ -30,11 +30,14 @@ except ImportError:
 try:
     from jarvis_calendar import TOOL_DEF as _CAL_TOOL, dispatch_tool_call as _cal_dispatch
     from jarvis_reminders import TOOL_DEFS as _REM_TOOLS, dispatch_tool_call as _rem_dispatch
-    _ALL_TOOLS = [_CAL_TOOL] + _REM_TOOLS
+    from jarvis_search import TOOL_DEF as _SEARCH_TOOL, dispatch_tool_call as _search_dispatch
+    _ALL_TOOLS = [_CAL_TOOL] + _REM_TOOLS + [_SEARCH_TOOL]
 
     def _dispatch_tool_call(name, args):
         if name == "add_calendar_event":
             return _cal_dispatch(name, args)
+        if name == "web_search":
+            return _search_dispatch(name, args)
         return _rem_dispatch(name, args)
 
 except ImportError:
@@ -49,7 +52,8 @@ def _get_system_prompt():
         f"You are J.A.R.V.I.S. (Just A Rather Very Intelligent System), the AI assistant of Simone Filosofi.\n"
         f"CURRENT TIME: {now.strftime('%H:%M:%S')}  DATE: {now.strftime('%A, %d %B %Y').upper()}\n"
         "Your personality: highly intelligent, precise, slightly witty. Address the user as 'Mr. Filosofi' occasionally.\n"
-        "Keep replies concise and clear. Never break character. Respond in the same language the user writes in."
+        "Keep replies concise and clear. Never break character. Respond in the same language the user writes in.\n"
+        "Use web_search for any real-time or current information: news, weather, prices, sports results, recent events."
     )
 
 def chat_with_jarvis(user_message):
@@ -61,7 +65,7 @@ def chat_with_jarvis(user_message):
         chat_history = chat_history[-40:]
     try:
         system_prompt = _get_system_prompt()
-        kwargs = {"model": "llama-3.3-70b-versatile", "max_tokens": 400,
+        kwargs = {"model": "meta-llama/llama-4-scout-17b-16e-instruct", "max_tokens": 400,
                   "messages": [{"role": "system", "content": system_prompt}] + chat_history}
         if _ALL_TOOLS:
             kwargs["tools"] = _ALL_TOOLS
@@ -92,7 +96,7 @@ def chat_with_jarvis(user_message):
                     "content": result_str,
                 })
             resp2 = _groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="meta-llama/llama-4-scout-17b-16e-instruct",
                 max_tokens=400,
                 messages=[{"role": "system", "content": system_prompt}] + chat_history,
             )
